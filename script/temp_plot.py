@@ -2,7 +2,6 @@
 
 """
 temp_plot.py
-
 Time Series Plot
 
 Author: Sandy Herho

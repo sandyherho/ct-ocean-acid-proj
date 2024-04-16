@@ -2,7 +2,6 @@
 
 """
 map.py
-
 Location of study map
 
 Author: Sandy Herho

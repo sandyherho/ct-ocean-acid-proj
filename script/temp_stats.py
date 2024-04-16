@@ -1,245 +1,116 @@
 #!/usr/bin/env python
 
+"""
+temp_stats.py
+Temporal Statistics
+
+Author: Sandy Herho
+Email: sandy.herho@email.ucr.edu
+Date: 03/29/2024
+"""
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import scipy.stats as stats
+from statsmodels.tsa.stattools import adfuller
 import scikit_posthocs as sp
 
+# Set visual style for all matplotlib plots
 plt.style.use("bmh")
 
-his = pd.read_csv("../data/processed/temporal/historical.csv")
-ssp119 = pd.read_csv("../data/processed/temporal/ssp119.csv")
-ssp126 = pd.read_csv("../data/processed/temporal/ssp126.csv")
-ssp245 = pd.read_csv("../data/processed/temporal/ssp245.csv")
-ssp370 = pd.read_csv("../data/processed/temporal/ssp370.csv")
-ssp585 = pd.read_csv("../data/processed/temporal/ssp585.csv")
+# Load data from CSV files
+def load_data(file_path, column_name):
+    return pd.read_csv(file_path)[column_name]
 
+# File paths for the datasets
+file_paths = {
+    'Historical': '../data/processed/temporal/historical.csv',
+    'SSP119': '../data/processed/temporal/ssp119.csv',
+    'SSP126': '../data/processed/temporal/ssp126.csv',
+    'SSP245': '../data/processed/temporal/ssp245.csv',
+    'SSP370': '../data/processed/temporal/ssp370.csv',
+    'SSP585': '../data/processed/temporal/ssp585.csv'
+}
 
-# Define the significance level
-alpha = 0.05
+# Load specified column for each scenario
+def load_datasets(file_paths, column_name):
+    return {scenario: load_data(path, column_name) for scenario, path in file_paths.items()}
 
-# Generate dummy data with different sample sizes for the control group
-data1 = ssp119['pH_med']
-data2 = ssp126['pH_med']
-data3 = ssp245['pH_med']
-data4 = ssp370['pH_med']
-data5 = ssp585['pH_med']
-control = his['pH_med']
+# Statistical analysis function
+def analyze_data(data):
+    data = data.dropna()  # Ensure no NA values interfere with calculations
+    skew = stats.skew(data)
+    kurt = stats.kurtosis(data, fisher=False)
+    shapiro_stat, shapiro_p = stats.shapiro(data)
+    adf_stat, adf_p, usedlag, nobs, critical_values, icbest = adfuller(data)
+    return skew, kurt, shapiro_stat, shapiro_p, adf_stat, adf_p, critical_values
 
-# Array of all groups for easy access
-all_data = [control, data1, data2, data3, data4, data5]
-labels = ['Historical', 'SSP 1-1.9', 'SSP 1-2.6', 'SSP 2-4.5', 'SSP 3-7.0', 'SSP 5-8.5']
+# Display statistical results
+def display_results(scenario, results):
+    print(f"\nResults for {scenario}:")
+    skew, kurt, shapiro_stat, shapiro_p, adf_stat, adf_p, critical_values = results
+    print(f"  Skewness: {skew:.3f}")
+    print(f"  Kurtosis: {kurt:.3f}")
+    print(f"  Shapiro-Wilk Test: Statistic={shapiro_stat:.3f}, p-value={shapiro_p:.3f}")
+    print(f"  ADF Test: Statistic={adf_stat:.3f}, p-value={adf_p:.3f}, Critical Values={critical_values}")
 
-# Prepare data for Dunn's test by creating a DataFrame
-data_stacked = np.concatenate(all_data)
-groups = np.concatenate([[label] * len(data) for data, label in zip(all_data, labels)])
-df = pd.DataFrame({'Value': data_stacked, 'Group': groups})
+# Function to prepare data for statistical testing
+def prepare_data_for_testing(file_paths, column_name):
+    data = [load_data(path, column_name) for path in file_paths.values()]
+    labels = list(file_paths.keys())
+    data_stacked = np.concatenate(data)
+    groups = np.concatenate([[label] * len(d) for d, label in zip(data, labels)])
+    return pd.DataFrame({'Value': data_stacked, 'Group': groups}), labels
 
-# Perform the Kruskal-Wallis test
-kw_stat, kw_pvalue = stats.kruskal(*all_data)
+# Function to perform Kruskal-Wallis and Dunn's tests
+def perform_statistical_tests(df, labels, alpha=0.05):
+    # Kruskal-Wallis test
+    kw_stat, kw_pvalue = stats.kruskal(*[df[df['Group'] == label]['Value'] for label in labels])
+    print(f'Kruskal-Wallis test statistic: {kw_stat:.3f}, p-value: {kw_pvalue:.3f}')
 
-# Print the Kruskal-Wallis test results
-print(f'Kruskal-Wallis test statistic: {kw_stat:.3f}, p-value: {kw_pvalue:.3f}')
-if kw_pvalue < alpha:
-    print("Significant differences found among the groups.")
-    print("This indicates that at least one group's median significantly differs from the others.")
-else:
-    print("No significant differences found among the groups.")
-    print("This suggests that there is no statistical evidence to conclude that the groups differ in median pH.")
+    if kw_pvalue < alpha:
+        print("Significant differences found among the groups.")
+        # Dunn's post-hoc test with Bonferroni adjustment
+        dunn_pvalues = sp.posthoc_dunn(df, val_col='Value', group_col='Group', p_adjust='bonferroni')
+        print(dunn_pvalues.round(3))
+        # Plot heatmap of Dunn's test results
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(dunn_pvalues, cmap='coolwarm_r', xticklabels=labels, yticklabels=labels)
+        plt.show()
 
-# Proceed with Dunn's post-hoc test if significant
-if kw_pvalue < alpha:
-    # Dunn's post-hoc test with Bonferroni adjustment
-    dunn_pvalues = sp.posthoc_dunn(df, val_col='Value', group_col='Group', p_adjust='bonferroni')
-    
-    # Print Dunn's test results
-    print("Dunn's test p-values (Bonferroni adjusted):")
-    print(dunn_pvalues.round(3))
-    print("Values below 0.05 indicate pairs of groups with statistically significant differences in medians.")
-    
-    # Visualize Dunn's test results using a heatmap
-    plt.figure()
-    ax = sns.heatmap(dunn_pvalues, cmap='coolwarm_r', fmt=".3f", 
-                     xticklabels=labels, yticklabels=labels)
-    colorbar = ax.collections[0].colorbar
-    colorbar.set_label('p-values', fontsize=18)
-    plt.xticks(fontsize=12)  # Increased font size for x-axis labels
-    plt.yticks(fontsize=12)  # Increased font size for y-axis labels
-    plt.savefig('../figs/fig3d.png', dpi=450)  # Save the heatmap to a file
-    
-# Visualizations for each group
-# Create and save a Boxplot
-plt.figure()
-sns.boxplot(x='Group', y='Value', data=df)
-plt.xticks(ticks=np.arange(len(labels)), labels=labels, fontsize=12)  # Increased font size for x-axis labels
-plt.yticks(fontsize=12)  # Increased font size for y-axis labels
-plt.xlabel('Scenarios', fontsize=18)
-plt.ylabel('pH', fontsize=18)
-plt.tight_layout()
-plt.savefig('../figs/fig3b.png', dpi=450)  # Save the boxplot to a file
+# Function to plot boxplots
+def plot_results(df, labels, filename):
+    plt.figure(figsize=(10, 8))
+    sns.boxplot(x='Group', y='Value', data=df)
+    plt.xticks(ticks=np.arange(len(labels)), labels=labels, rotation=45)
+    plt.savefig(filename)
 
-# Create and save a Density Plot
-plt.figure()
-for i, group in enumerate(all_data):
-    sns.kdeplot(group, label=labels[i])
-plt.legend()
-plt.xticks(fontsize=12)  # Increased font size for x-axis labels
-plt.yticks(fontsize=12)  # Increased font size for y-axis labels
-plt.xlabel('pH', fontsize=18)
-plt.ylabel('Probability Density', fontsize=18)
-plt.tight_layout()
-plt.savefig('../figs/fig3c.png', dpi=450)  # Save the density plot to a file
+# Prepare and plot data
+def prepare_and_plot_data(file_paths, column_name, file_prefix):
+    data = load_datasets(file_paths, column_name)
+    for scenario, dataset in data.items():
+        results = analyze_data(dataset)
+        display_results(scenario, results)
+    df, labels = prepare_data_for_testing(file_paths, column_name)
+    perform_statistical_tests(df, labels)
+    plot_results(df, labels, f'../figs/{file_prefix}_boxplot.png')
+    plot_density(data, labels, f'../figs/{file_prefix}_density.png')
 
+# Plot density for each scenario
+def plot_density(data, labels, filename):
+    plt.figure(figsize=(10, 8))
+    for label, dataset in data.items():
+        sns.kdeplot(dataset.dropna(), label=label)
+    plt.legend()
+    plt.savefig(filename)
 
+if __name__ == "__main__":
+    # Analyze and plot for 'aragonite_med'
+    prepare_and_plot_data(file_paths, 'aragonite_med', 'aragonite_med')
 
-# Define the significance level
-alpha = 0.05
+    # Analyze and plot for 'calcite_med'
+    prepare_and_plot_data(file_paths, 'calcite_med', 'calcite_med')
 
-# Generate dummy data with different sample sizes for the control group
-data1 = ssp119['aragonite_med']
-data2 = ssp126['aragonite_med']
-data3 = ssp245['aragonite_med']
-data4 = ssp370['aragonite_med']
-data5 = ssp585['aragonite_med']
-control = his['aragonite_med']
-
-# Array of all groups for easy access
-all_data = [control, data1, data2, data3, data4, data5]
-labels = ['Historical', 'SSP 1-1.9', 'SSP 1-2.6', 'SSP 2-4.5', 'SSP 3-7.0', 'SSP 5-8.5']
-
-# Prepare data for Dunn's test by creating a DataFrame
-data_stacked = np.concatenate(all_data)
-groups = np.concatenate([[label] * len(data) for data, label in zip(all_data, labels)])
-df = pd.DataFrame({'Value': data_stacked, 'Group': groups})
-
-# Perform the Kruskal-Wallis test
-kw_stat, kw_pvalue = stats.kruskal(*all_data)
-
-# Print the Kruskal-Wallis test results
-print(f'Kruskal-Wallis test statistic: {kw_stat:.3f}, p-value: {kw_pvalue:.3f}')
-if kw_pvalue < alpha:
-    print("Significant differences found among the groups.")
-    print("This indicates that at least one group's median significantly differs from the others.")
-else:
-    print("No significant differences found among the groups.")
-    print("This suggests that there is no statistical evidence to conclude that the groups differ in median pH.")
-
-# Proceed with Dunn's post-hoc test if significant
-if kw_pvalue < alpha:
-    # Dunn's post-hoc test with Bonferroni adjustment
-    dunn_pvalues = sp.posthoc_dunn(df, val_col='Value', group_col='Group', p_adjust='bonferroni')
-    
-    # Print Dunn's test results
-    print("Dunn's test p-values (Bonferroni adjusted):")
-    print(dunn_pvalues.round(3))
-    print("Values below 0.05 indicate pairs of groups with statistically significant differences in medians.")
-    
-    # Visualize Dunn's test results using a heatmap
-    plt.figure()
-    ax = sns.heatmap(dunn_pvalues, cmap='coolwarm_r', fmt=".3f", 
-                     xticklabels=labels, yticklabels=labels)
-    colorbar = ax.collections[0].colorbar
-    colorbar.set_label('p-values', fontsize=18)
-    plt.xticks(fontsize=12)  # Increased font size for x-axis labels
-    plt.yticks(fontsize=12)  # Increased font size for y-axis labels
-    plt.savefig('../figs/fig4d.png', dpi=450)  # Save the heatmap to a file
-    
-# Visualizations for each group
-# Create and save a Boxplot
-plt.figure()
-sns.boxplot(x='Group', y='Value', data=df)
-plt.xticks(ticks=np.arange(len(labels)), labels=labels, fontsize=12)  # Increased font size for x-axis labels
-plt.yticks(fontsize=12)  # Increased font size for y-axis labels
-plt.xlabel('Scenarios', fontsize=18)
-plt.ylabel(r"$\Omega_{\text{Aragonite}}$", fontsize=20)
-plt.tight_layout()
-plt.savefig('../figs/fig4b.png', dpi=450)  # Save the boxplot to a file
-
-# Create and save a Density Plot
-plt.figure()
-for i, group in enumerate(all_data):
-    sns.kdeplot(group, label=labels[i])
-plt.legend()
-plt.xticks(fontsize=12)  # Increased font size for x-axis labels
-plt.yticks(fontsize=12)  # Increased font size for y-axis labels
-plt.xlabel(r"$\Omega_{\text{Aragonite}}$", fontsize=20)
-plt.ylabel('Probability Density', fontsize=18)
-plt.tight_layout()
-plt.savefig('../figs/fig4c.png', dpi=450)  # Save the density plot to a file
-
-# Define the significance level
-alpha = 0.05
-
-# Generate dummy data with different sample sizes for the control group
-data1 = ssp119['calcite_med']
-data2 = ssp126['calcite_med']
-data3 = ssp245['calcite_med']
-data4 = ssp370['calcite_med']
-data5 = ssp585['calcite_med']
-control = his['calcite_med']
-
-# Array of all groups for easy access
-all_data = [control, data1, data2, data3, data4, data5]
-labels = ['Historical', 'SSP 1-1.9', 'SSP 1-2.6', 'SSP 2-4.5', 'SSP 3-7.0', 'SSP 5-8.5']
-
-# Prepare data for Dunn's test by creating a DataFrame
-data_stacked = np.concatenate(all_data)
-groups = np.concatenate([[label] * len(data) for data, label in zip(all_data, labels)])
-df = pd.DataFrame({'Value': data_stacked, 'Group': groups})
-
-# Perform the Kruskal-Wallis test
-kw_stat, kw_pvalue = stats.kruskal(*all_data)
-
-# Print the Kruskal-Wallis test results
-print(f'Kruskal-Wallis test statistic: {kw_stat:.3f}, p-value: {kw_pvalue:.3f}')
-if kw_pvalue < alpha:
-    print("Significant differences found among the groups.")
-    print("This indicates that at least one group's median significantly differs from the others.")
-else:
-    print("No significant differences found among the groups.")
-    print("This suggests that there is no statistical evidence to conclude that the groups differ in median pH.")
-
-# Proceed with Dunn's post-hoc test if significant
-if kw_pvalue < alpha:
-    # Dunn's post-hoc test with Bonferroni adjustment
-    dunn_pvalues = sp.posthoc_dunn(df, val_col='Value', group_col='Group', p_adjust='bonferroni')
-    
-    # Print Dunn's test results
-    print("Dunn's test p-values (Bonferroni adjusted):")
-    print(dunn_pvalues.round(3))
-    print("Values below 0.05 indicate pairs of groups with statistically significant differences in medians.")
-    
-    # Visualize Dunn's test results using a heatmap
-    plt.figure()
-    ax = sns.heatmap(dunn_pvalues, cmap='coolwarm_r', fmt=".3f", 
-                     xticklabels=labels, yticklabels=labels)
-    colorbar = ax.collections[0].colorbar
-    colorbar.set_label('p-values', fontsize=18)
-    plt.xticks(fontsize=12)  # Increased font size for x-axis labels
-    plt.yticks(fontsize=12)  # Increased font size for y-axis labels
-    plt.savefig('../figs/fig5d.png', dpi=450)  # Save the heatmap to a file
-    
-# Visualizations for each group
-# Create and save a Boxplot
-plt.figure()
-sns.boxplot(x='Group', y='Value', data=df)
-plt.xticks(ticks=np.arange(len(labels)), labels=labels, fontsize=12)  # Increased font size for x-axis labels
-plt.yticks(fontsize=12)  # Increased font size for y-axis labels
-plt.xlabel('Scenarios', fontsize=18)
-plt.ylabel(r"$\Omega_{\text{Calcite}}$", fontsize=20)
-plt.tight_layout()
-plt.savefig('../figs/fig5b.png', dpi=450)  # Save the boxplot to a file
-
-# Create and save a Density Plot
-plt.figure()
-for i, group in enumerate(all_data):
-    sns.kdeplot(group, label=labels[i])
-plt.legend()
-plt.xticks(fontsize=12)  # Increased font size for x-axis labels
-plt.yticks(fontsize=12)  # Increased font size for y-axis labels
-plt.xlabel(r"$\Omega_{\text{Calcite}}$", fontsize=20)
-plt.ylabel('Probability Density', fontsize=18)
-plt.tight_layout()
-plt.savefig('../figs/fig5c.png', dpi=450)  # Save the density plot to a file
+    # Analyze and plot for 'pH_med'
+    prepare_and_plot_data(file_paths, 'pH_med', 'pH_med')

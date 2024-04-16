@@ -2,7 +2,6 @@
 
 """
 extract_data.py
-
 Extract time series & spatial data in Coral Triangle
 
 Author: Sandy Herho
