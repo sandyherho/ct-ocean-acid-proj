@@ -84,16 +84,18 @@ class ClimateDataAnalyzer:
         ax.set_ylabel(r"pCO$_2$ [ppm]", fontsize=18)
         plt.tight_layout()
         plt.xlim(-1, 2102)
+        plt.xticks(fontsize=12)  
+        plt.yticks(fontsize=12) 
         plt.savefig("../figs/fig2.png", dpi=400)
 
 if __name__ == "__main__":
     file_paths = {
         "Historical": "../data/rf/historical.csv",
-        "SSP 1.19": "../data/rf/IMAGE_ssp119.csv",
-        "SSP 1.26": "../data/rf/IMAGE_ssp126.csv",
-        "SSP 2.45": "../data/rf/MASSAGE_GLOBIOM_ssp245.csv",
-        "SSP 3.70": "../data/rf/AIM_ssp370.csv",
-        "SSP 5.85": "../data/rf/REMIND_MAGPIE_ssp585.csv"
+        "SSP 1-1.9": "../data/rf/IMAGE_ssp119.csv",
+        "SSP 1-2.6": "../data/rf/IMAGE_ssp126.csv",
+        "SSP 2-4.5": "../data/rf/MASSAGE_GLOBIOM_ssp245.csv",
+        "SSP 3-7.0": "../data/rf/AIM_ssp370.csv",
+        "SSP 5-8.5": "../data/rf/REMIND_MAGPIE_ssp585.csv"
     }
 
     analyzer = ClimateDataAnalyzer(file_paths)

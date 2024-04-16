@@ -103,7 +103,7 @@ class SRTMMapPlotter:
 # CT map
 if __name__ == "__main__":
     # Initialize the plotter with a specific geographical region
-    plotter = SRTMMapPlotter(region=[92, 170, -20, 20])
+    plotter = SRTMMapPlotter(region=[95, 191, -25, 30])
     # Plot the Earth relief map
     plotter.plot_map()
     # Add a colorbar to the map
